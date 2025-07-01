@@ -1,0 +1,193 @@
+name: Build Custom PostgreSQL Docker Image
+
+on:
+  # 当推送到main分支时触发
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'Dockerfile'
+      - 'config/**'
+      - 'scripts/**'
+      - '.github/workflows/build-postgres.yml'
+
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      postgres_version:
+        description: 'PostgreSQL version to build'
+        required: false
+        default: '15'
+      tag_suffix:
+        description: 'Additional tag suffix'
+        required: false
+        default: ''
+
+  # 定时构建（每周日凌晨2点）
+  schedule:
+    - cron: '0 2 * * 0'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/postgres-custom
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        postgres_version: [15, 16]
+        include:
+          - postgres_version: 15
+            platforms: linux/amd64,linux/arm64
+          - postgres_version: 16
+            platforms: linux/amd64,linux/arm64
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha
+          type=raw,value=pg${{ matrix.postgres_version }}-latest
+          type=raw,value=pg${{ matrix.postgres_version }}-{{date 'YYYYMMDD'}}
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        platforms: ${{ matrix.platforms }}
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        build-args: |
+          POSTGRES_VERSION=${{ matrix.postgres_version }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Run security scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pg${{ matrix.postgres_version }}-latest
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  test:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        postgres_version: [15, 16]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Test Docker image
+      run: |
+        # 拉取刚构建的镜像
+        docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pg${{ matrix.postgres_version }}-latest
+
+        # 启动容器
+        docker run -d \
+          --name test-postgres \
+          -e POSTGRES_PASSWORD=testpass \
+          -e POSTGRES_DB=testdb \
+          -p 5432:5432 \
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pg${{ matrix.postgres_version }}-latest
+
+        # 等待容器启动
+        sleep 30
+
+        # 测试连接
+        docker exec test-postgres psql -U postgres -d testdb -c "SELECT version();"
+
+        # 测试扩展
+        docker exec test-postgres psql -U postgres -d testdb -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+        docker exec test-postgres psql -U postgres -d testdb -c "CREATE EXTENSION IF NOT EXISTS vector;"
+        docker exec test-postgres psql -U postgres -d testdb -c "CREATE EXTENSION IF NOT EXISTS pg_cron;"
+
+        # 验证扩展
+        docker exec test-postgres psql -U postgres -d testdb -c "SELECT * FROM pg_extension;"
+
+        # 清理
+        docker stop test-postgres
+        docker rm test-postgres
+
+  create-release:
+    needs: [build-and-push, test]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: release-${{ github.sha }}
+        release_name: Custom PostgreSQL Release ${{ github.sha }}
+        body: |
+          ## 🐘 Custom PostgreSQL Docker Images
+
+          ### 🚀 Available Images:
+          - `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pg15-latest`
+          - `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pg16-latest`
+
+          ### 📦 Included Extensions:
+          - PostGIS (地理信息系统)
+          - pgvector (向量数据库/AI)
+          - pg_cron (定时任务)
+          - pg_partman (分区管理)
+          - pgjwt (JWT处理)
+          - TimescaleDB (时间序列)
+          - 以及更多...
+
+          ### 🔧 Usage:
+          ```bash
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pg15-latest
+          docker run -d \
+            --name my-postgres \
+            -e POSTGRES_PASSWORD=yourpassword \
+            -p 5432:5432 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pg15-latest
+          ```
+
+          ### 📝 Changes:
+          ${{ github.event.head_commit.message }}
+        draft: false
+        prerelease: false

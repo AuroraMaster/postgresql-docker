@@ -1,0 +1,55 @@
+# PostgreSQL数据和日志文件
+/data/
+/logs/
+/backups/*.sql
+/backups/*.dump
+
+# Docker相关
+.dockerignore
+
+# 环境变量和敏感信息
+.env
+.env.local
+.env.*.local
+secrets/
+
+# 操作系统文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+[Tt]humbs.db
+
+# IDE和编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 临时文件
+*.tmp
+*.temp
+*.log
+
+# 节点模块（如果有Node.js工具）
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 构建输出
+dist/
+build/
+
+# 证书文件
+*.pem
+*.key
+*.crt
+*.csr
+
+# 本地配置覆盖
+config/local.conf
+config/*.local.conf

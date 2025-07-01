@@ -1,0 +1,139 @@
+version: '3.8'
+
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: custom-postgres:latest
+    container_name: custom-postgres
+    restart: unless-stopped
+
+    environment:
+      # 基础配置
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_password
+
+      # 可选配置
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      # 数据持久化
+      - postgres_data:/var/lib/postgresql/data
+
+      # 日志
+      - postgres_logs:/var/log/postgresql
+
+      # 备份目录
+      - ./backups:/backups
+
+      # 自定义配置（可选，如果需要运行时修改）
+      # - ./config/postgresql.conf:/var/lib/postgresql/data/postgresql.conf
+      # - ./config/pg_hba.conf:/var/lib/postgresql/data/pg_hba.conf
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+    networks:
+      - postgres_network
+
+  # 可选：PostgreSQL管理工具 pgAdmin
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    restart: unless-stopped
+
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin_password
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+
+    ports:
+      - "8080:80"
+
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    networks:
+      - postgres_network
+
+  # 可选：Redis (常与PostgreSQL配合使用)
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+
+    command: redis-server --appendonly yes --requirepass redis_password
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - redis_data:/data
+
+    networks:
+      - postgres_network
+
+  # 可选：Nginx (用于反向代理)
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: unless-stopped
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - nginx_logs:/var/log/nginx
+
+    depends_on:
+      - postgres
+      - pgadmin
+
+    networks:
+      - postgres_network
+
+volumes:
+  postgres_data:
+    driver: local
+  postgres_logs:
+    driver: local
+  pgadmin_data:
+    driver: local
+  redis_data:
+    driver: local
+  nginx_logs:
+    driver: local
+
+networks:
+  postgres_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
