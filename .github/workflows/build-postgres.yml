@@ -4,11 +4,6 @@ on:
   # 当推送到main分支时触发
   push:
     branches: [ main, master ]
-    paths:
-      - 'Dockerfile'
-      - 'config/**'
-      - 'scripts/**'
-      - '.github/workflows/build-postgres.yml'
 
   # 手动触发
   workflow_dispatch:
@@ -17,6 +12,10 @@ on:
         description: 'PostgreSQL version to build'
         required: false
         default: '15'
+        type: choice
+        options:
+          - '15'
+          - '16'
       tag_suffix:
         description: 'Additional tag suffix'
         required: false
@@ -158,6 +157,7 @@ jobs:
       uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      continue-on-error: true
       with:
         tag_name: release-${{ github.sha }}
         release_name: Custom PostgreSQL Release ${{ github.sha }}

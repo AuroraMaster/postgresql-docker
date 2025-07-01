@@ -1,6 +1,6 @@
 # 定制PostgreSQL Docker镜像
 # 基于官方PostgreSQL 15镜像
-FROM postgres:15
+FROM postgres:15 as postgres
 
 # 维护者信息
 LABEL maintainer="your-email@example.com"
