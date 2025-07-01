@@ -150,30 +150,41 @@ SELECT '[1,2,3]'::vector;
 本项目配置了完整的CI/CD流程，包含两个主要工作流：
 
 ### 主要工作流
-1. **🐘 Build Custom PostgreSQL Docker Image** (`.github/workflows/build-postgres.yml`)
-   - 默认主构建流水线
-   - 构建完整的PostgreSQL镜像
-   - 多架构支持 (AMD64/ARM64)
-
-2. **📋 Test Build** (`.github/workflows/build-test.yml`)
-   - 快速验证构建
-   - 用于CI测试和验证
+**🐘 Build Custom PostgreSQL Docker Image** (`.github/workflows/build-postgres.yml`)
+- 仅手动触发的构建流水线
+- 支持选择PostgreSQL版本 (15, 16, 或同时构建)
+- 多架构支持 (AMD64/ARM64)
+- 可选强制重建 (无缓存)
 
 ### 触发条件
-- 推送到main/master分支 (自动触发)
-- 手动触发 (workflow_dispatch)
-- 每周日定时构建
+- ✅ **仅手动触发** (workflow_dispatch)
+- ❌ 不再自动触发 (需要手动启动构建)
 
 ### 手动触发方法
-```bash
-# 使用提供的脚本
-./trigger-build.sh
 
-# 或直接在GitHub网页操作
-# 访问: https://github.com/AuroraMaster/postgresql-docker/actions
-# 选择 "Build Custom PostgreSQL Docker Image"
-# 点击 "Run workflow"
+#### 方法1: 使用脚本 (推荐)
+```bash
+# 构建PostgreSQL 15
+./trigger-build.sh 15
+
+# 构建PostgreSQL 16
+./trigger-build.sh 16
+
+# 构建两个版本
+./trigger-build.sh both
+
+# 强制重建 (无缓存)
+./trigger-build.sh both true
 ```
+
+#### 方法2: GitHub网页操作
+1. 访问: https://github.com/AuroraMaster/postgresql-docker/actions
+2. 选择 "Build Custom PostgreSQL Docker Image"
+3. 点击 "Run workflow"
+4. 选择参数:
+   - PostgreSQL版本: 15, 16, 或 both
+   - 强制重建: true/false
+5. 点击 "Run workflow"
 
 ### 构建流程
 1. **多架构构建** - 支持AMD64和ARM64

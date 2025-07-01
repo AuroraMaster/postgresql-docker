@@ -1,6 +1,7 @@
 # 定制PostgreSQL Docker镜像
-# 基于官方PostgreSQL 15镜像
-FROM postgres:15 as postgres
+# 支持多版本构建
+ARG POSTGRES_VERSION=15
+FROM postgres:${POSTGRES_VERSION} as postgres
 
 # 维护者信息
 LABEL maintainer="your-email@example.com"
