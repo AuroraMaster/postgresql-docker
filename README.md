@@ -147,13 +147,33 @@ SELECT '[1,2,3]'::vector;
 
 ## 🔄 GitHub Actions自动构建
 
-本项目配置了完整的CI/CD流程：
+本项目配置了完整的CI/CD流程，包含两个主要工作流：
+
+### 主要工作流
+1. **🐘 Build Custom PostgreSQL Docker Image** (`.github/workflows/build-postgres.yml`)
+   - 默认主构建流水线
+   - 构建完整的PostgreSQL镜像
+   - 多架构支持 (AMD64/ARM64)
+
+2. **📋 Test Build** (`.github/workflows/build-test.yml`)
+   - 快速验证构建
+   - 用于CI测试和验证
 
 ### 触发条件
-- 推送到main/master分支
-- 修改Dockerfile或配置文件
-- 手动触发
+- 推送到main/master分支 (自动触发)
+- 手动触发 (workflow_dispatch)
 - 每周日定时构建
+
+### 手动触发方法
+```bash
+# 使用提供的脚本
+./trigger-build.sh
+
+# 或直接在GitHub网页操作
+# 访问: https://github.com/AuroraMaster/postgresql-docker/actions
+# 选择 "Build Custom PostgreSQL Docker Image"
+# 点击 "Run workflow"
+```
 
 ### 构建流程
 1. **多架构构建** - 支持AMD64和ARM64
