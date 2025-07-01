@@ -109,9 +109,9 @@ git commit -m "添加注释"
 
 ### 使用脚本
 ```bash
-./trigger-build.sh 15          # 构建PG15
-./trigger-build.sh 16 true     # 强制构建PG16
-./trigger-build.sh both false  # 构建两个版本
+./build-helper.sh trigger 15          # 构建PG15
+./build-helper.sh trigger 16 true     # 强制构建PG16
+./build-helper.sh trigger both false  # 构建两个版本
 ```
 
 ### 使用GitHub网页界面
@@ -137,16 +137,28 @@ git commit -m "添加注释"
 ## 🐛 故障排除
 
 ### 构建未触发
-- 检查提交消息是否包含正确的触发标签
-- 确认推送到正确的分支（main/master）
-- 查看GitHub Actions页面的工作流历史
+```bash
+# 检查最近的提交
+git log -1 --oneline
+
+# 验证标签格式
+./build-helper.sh test-commit "你的提交消息"
+
+# 手动触发备用方案
+./build-helper.sh trigger 15
+```
 
 ### 构建失败
-- 查看构建日志了解具体错误
-- 尝试使用`[force]`标签强制重建
-- 检查Docker相关配置是否正确
+```bash
+# 查看构建状态
+./build-helper.sh status
+
+# 强制重建
+git commit --amend -m "修复构建问题 [build] [pg15] [force]"
+git push --force-with-lease origin main
+```
 
 ### 参数解析错误
+- 使用`./build-helper.sh test-commit "消息"`验证解析
 - 确保标签格式正确（方括号、正确拼写）
 - 避免在标签中使用特殊字符
-- 检查提交消息编码问题

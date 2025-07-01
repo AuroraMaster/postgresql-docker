@@ -183,16 +183,16 @@ git commit -m "发布版本 [build] [both] [tag:v1.0.0]"
 ##### 方法A: 使用脚本 (推荐)
 ```bash
 # 构建PostgreSQL 15
-./trigger-build.sh 15
+./build-helper.sh trigger 15
 
 # 构建PostgreSQL 16
-./trigger-build.sh 16
+./build-helper.sh trigger 16
 
 # 构建两个版本
-./trigger-build.sh both
+./build-helper.sh trigger both
 
 # 强制重建 (无缓存)
-./trigger-build.sh both true
+./build-helper.sh trigger both true
 ```
 
 ##### 方法B: GitHub网页操作
@@ -233,10 +233,11 @@ git commit -m "发布版本 [build] [both] [tag:v1.0.0]"
 ### 本地测试
 
 ```bash
-# 构建测试镜像
-docker build -t test-postgres .
+# 使用统一脚本进行本地测试
+./build-helper.sh test-local
 
-# 运行测试
+# 或手动构建测试
+docker build -t test-postgres .
 docker run --rm \
   -e POSTGRES_PASSWORD=test \
   test-postgres \

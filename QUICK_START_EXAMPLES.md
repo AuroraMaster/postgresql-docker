@@ -49,7 +49,7 @@ vim Dockerfile
 vim config/postgresql.conf
 
 # 本地测试（可选）
-./test-local.sh
+./build-helper.sh test-local
 ```
 
 ### 2. 提交并触发构建
@@ -67,7 +67,7 @@ git push origin main
 ### 3. 监控构建状态
 ```bash
 # 检查构建状态
-./check-build-status.sh
+./build-helper.sh status
 
 # 查看详细日志
 open https://github.com/AuroraMaster/postgresql-docker/actions
@@ -146,10 +146,10 @@ git commit -m "完成配置优化，触发构建 [build] [both]"
 git log -1 --oneline
 
 # 验证标签格式
-./test-commit-trigger.sh
+./build-helper.sh test-commit "你的提交消息"
 
 # 手动触发备用方案
-./trigger-build.sh 15
+./build-helper.sh trigger 15
 ```
 
 ### 构建失败
