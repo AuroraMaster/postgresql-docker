@@ -1,7 +1,11 @@
 name: Build Custom PostgreSQL Docker Image
 
 on:
-  # 仅手动触发构建
+  # Git提交触发构建 (基于提交消息参数)
+  push:
+    branches: [ main, master ]
+
+  # 手动触发构建
   workflow_dispatch:
     inputs:
       postgres_version:
@@ -28,9 +32,82 @@ env:
   IMAGE_NAME: ${{ github.repository }}/postgres-custom
 
 jobs:
-  build-pg15:
+  parse-commit:
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.postgres_version == '15' || github.event.inputs.postgres_version == 'both' }}
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      postgres_version: ${{ steps.check.outputs.postgres_version }}
+      force_rebuild: ${{ steps.check.outputs.force_rebuild }}
+      tag_suffix: ${{ steps.check.outputs.tag_suffix }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Parse commit message for build parameters
+      id: check
+      run: |
+        # 获取提交消息
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          # 手动触发时使用输入参数
+          echo "should_build=true" >> $GITHUB_OUTPUT
+          echo "postgres_version=${{ github.event.inputs.postgres_version }}" >> $GITHUB_OUTPUT
+          echo "force_rebuild=${{ github.event.inputs.force_rebuild }}" >> $GITHUB_OUTPUT
+          echo "tag_suffix=${{ github.event.inputs.tag_suffix }}" >> $GITHUB_OUTPUT
+          echo "📋 Manual trigger detected with parameters"
+        else
+          # Git提交时解析提交消息
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          echo "🔍 Analyzing commit message: $COMMIT_MSG"
+
+          # 默认值
+          SHOULD_BUILD="false"
+          PG_VERSION="15"
+          FORCE_REBUILD="false"
+          TAG_SUFFIX=""
+
+          # 检查是否包含构建标签
+          if echo "$COMMIT_MSG" | grep -qE "\[build\]|\[构建\]|--build"; then
+            SHOULD_BUILD="true"
+            echo "✅ Build trigger found in commit message"
+
+            # 解析PostgreSQL版本
+            if echo "$COMMIT_MSG" | grep -qE "\[pg15\]|\[postgresql-15\]|--pg15"; then
+              PG_VERSION="15"
+              echo "📦 PostgreSQL 15 specified"
+            elif echo "$COMMIT_MSG" | grep -qE "\[pg16\]|\[postgresql-16\]|--pg16"; then
+              PG_VERSION="16"
+              echo "📦 PostgreSQL 16 specified"
+            elif echo "$COMMIT_MSG" | grep -qE "\[pgboth\]|\[postgresql-both\]|--pgboth|\[both\]"; then
+              PG_VERSION="both"
+              echo "📦 Both PostgreSQL versions specified"
+            fi
+
+            # 检查强制重建
+            if echo "$COMMIT_MSG" | grep -qE "\[force\]|\[强制\]|--force|--no-cache"; then
+              FORCE_REBUILD="true"
+              echo "🔥 Force rebuild enabled"
+            fi
+
+            # 提取标签后缀
+            if echo "$COMMIT_MSG" | grep -qE "\[tag:.*\]"; then
+              TAG_SUFFIX=$(echo "$COMMIT_MSG" | grep -oE "\[tag:[^]]+\]" | sed 's/\[tag:\([^]]*\)\]/\1/')
+              echo "🏷️  Tag suffix: $TAG_SUFFIX"
+            fi
+          else
+            echo "⏭️  No build trigger found in commit message"
+          fi
+
+          echo "should_build=$SHOULD_BUILD" >> $GITHUB_OUTPUT
+          echo "postgres_version=$PG_VERSION" >> $GITHUB_OUTPUT
+          echo "force_rebuild=$FORCE_REBUILD" >> $GITHUB_OUTPUT
+          echo "tag_suffix=$TAG_SUFFIX" >> $GITHUB_OUTPUT
+        fi
+
+  build-pg15:
+    needs: parse-commit
+    runs-on: ubuntu-latest
+    if: ${{ needs.parse-commit.outputs.should_build == 'true' && (needs.parse-commit.outputs.postgres_version == '15' || needs.parse-commit.outputs.postgres_version == 'both') }}
     permissions:
       contents: read
       packages: write
@@ -73,12 +150,13 @@ jobs:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-        cache-from: ${{ github.event.inputs.force_rebuild == 'false' && 'type=gha' || '' }}
+        cache-from: ${{ needs.parse-commit.outputs.force_rebuild == 'false' && 'type=gha' || '' }}
         cache-to: type=gha,mode=max
 
   build-pg16:
+    needs: parse-commit
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.postgres_version == '16' || github.event.inputs.postgres_version == 'both' }}
+    if: ${{ needs.parse-commit.outputs.should_build == 'true' && (needs.parse-commit.outputs.postgres_version == '16' || needs.parse-commit.outputs.postgres_version == 'both') }}
     permissions:
       contents: read
       packages: write
@@ -122,21 +200,21 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         build-args: |
           POSTGRES_VERSION=16
-        cache-from: ${{ github.event.inputs.force_rebuild == 'false' && 'type=gha' || '' }}
+        cache-from: ${{ needs.parse-commit.outputs.force_rebuild == 'false' && 'type=gha' || '' }}
         cache-to: type=gha,mode=max
 
   security-scan:
-    needs: [build-pg15, build-pg16]
+    needs: [parse-commit, build-pg15, build-pg16]
     runs-on: ubuntu-latest
     if: always() && (needs.build-pg15.result == 'success' || needs.build-pg16.result == 'success')
 
     strategy:
       matrix:
         version:
-          - ${{ github.event.inputs.postgres_version == '15' && '15' || '' }}
-          - ${{ github.event.inputs.postgres_version == '16' && '16' || '' }}
-          - ${{ github.event.inputs.postgres_version == 'both' && '15' || '' }}
-          - ${{ github.event.inputs.postgres_version == 'both' && '16' || '' }}
+          - ${{ needs.parse-commit.outputs.postgres_version == '15' && '15' || '' }}
+          - ${{ needs.parse-commit.outputs.postgres_version == '16' && '16' || '' }}
+          - ${{ needs.parse-commit.outputs.postgres_version == 'both' && '15' || '' }}
+          - ${{ needs.parse-commit.outputs.postgres_version == 'both' && '16' || '' }}
         exclude:
           - version: ''
 
@@ -155,17 +233,17 @@ jobs:
         sarif_file: 'trivy-results-pg${{ matrix.version }}.sarif'
 
   test:
-    needs: [build-pg15, build-pg16]
+    needs: [parse-commit, build-pg15, build-pg16]
     runs-on: ubuntu-latest
     if: always() && (needs.build-pg15.result == 'success' || needs.build-pg16.result == 'success')
 
     strategy:
       matrix:
         version:
-          - ${{ github.event.inputs.postgres_version == '15' && '15' || '' }}
-          - ${{ github.event.inputs.postgres_version == '16' && '16' || '' }}
-          - ${{ github.event.inputs.postgres_version == 'both' && '15' || '' }}
-          - ${{ github.event.inputs.postgres_version == 'both' && '16' || '' }}
+          - ${{ needs.parse-commit.outputs.postgres_version == '15' && '15' || '' }}
+          - ${{ needs.parse-commit.outputs.postgres_version == '16' && '16' || '' }}
+          - ${{ needs.parse-commit.outputs.postgres_version == 'both' && '15' || '' }}
+          - ${{ needs.parse-commit.outputs.postgres_version == 'both' && '16' || '' }}
         exclude:
           - version: ''
 
@@ -202,7 +280,7 @@ jobs:
         docker rm test-postgres-${{ matrix.version }}
 
   create-release:
-    needs: [build-pg15, build-pg16, test]
+    needs: [parse-commit, build-pg15, build-pg16, test]
     runs-on: ubuntu-latest
     if: always() && (needs.build-pg15.result == 'success' || needs.build-pg16.result == 'success') && needs.test.result == 'success'
 
@@ -222,9 +300,9 @@ jobs:
           ## 🐘 Custom PostgreSQL Docker Images
 
           ### 🚀 Built Images:
-          ${{ github.event.inputs.postgres_version == '15' && format('- `{0}/{1}:pg15-latest`', env.REGISTRY, env.IMAGE_NAME) || '' }}
-          ${{ github.event.inputs.postgres_version == '16' && format('- `{0}/{1}:pg16-latest`', env.REGISTRY, env.IMAGE_NAME) || '' }}
-          ${{ github.event.inputs.postgres_version == 'both' && format('- `{0}/{1}:pg15-latest`\n- `{0}/{1}:pg16-latest`', env.REGISTRY, env.IMAGE_NAME, env.REGISTRY, env.IMAGE_NAME) || '' }}
+          ${{ needs.parse-commit.outputs.postgres_version == '15' && format('- `{0}/{1}:pg15-latest`', env.REGISTRY, env.IMAGE_NAME) || '' }}
+          ${{ needs.parse-commit.outputs.postgres_version == '16' && format('- `{0}/{1}:pg16-latest`', env.REGISTRY, env.IMAGE_NAME) || '' }}
+          ${{ needs.parse-commit.outputs.postgres_version == 'both' && format('- `{0}/{1}:pg15-latest`\n- `{0}/{1}:pg16-latest`', env.REGISTRY, env.IMAGE_NAME, env.REGISTRY, env.IMAGE_NAME) || '' }}
 
           ### 📦 Included Extensions:
           - PostGIS (地理信息系统)
@@ -247,8 +325,9 @@ jobs:
           ```
 
           ### ⚙️ Build Parameters:
-          - PostgreSQL Version: ${{ github.event.inputs.postgres_version }}
-          - Force Rebuild: ${{ github.event.inputs.force_rebuild }}
-          - Tag Suffix: ${{ github.event.inputs.tag_suffix || 'none' }}
+          - PostgreSQL Version: ${{ needs.parse-commit.outputs.postgres_version }}
+          - Force Rebuild: ${{ needs.parse-commit.outputs.force_rebuild }}
+          - Tag Suffix: ${{ needs.parse-commit.outputs.tag_suffix || 'none' }}
+          - Trigger: ${{ github.event_name == 'workflow_dispatch' && 'Manual' || 'Commit Message' }}
         draft: false
         prerelease: false

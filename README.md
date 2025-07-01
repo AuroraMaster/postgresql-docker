@@ -147,22 +147,40 @@ SELECT '[1,2,3]'::vector;
 
 ## 🔄 GitHub Actions自动构建
 
-本项目配置了完整的CI/CD流程，包含两个主要工作流：
+本项目配置了完整的CI/CD流程，支持**多种触发方式**：
 
-### 主要工作流
-**🐘 Build Custom PostgreSQL Docker Image** (`.github/workflows/build-postgres.yml`)
-- 仅手动触发的构建流水线
-- 支持选择PostgreSQL版本 (15, 16, 或同时构建)
-- 多架构支持 (AMD64/ARM64)
-- 可选强制重建 (无缓存)
+### 🚀 触发方式
 
-### 触发条件
-- ✅ **仅手动触发** (workflow_dispatch)
-- ❌ 不再自动触发 (需要手动启动构建)
+#### 1. 📝 提交消息触发（推荐）
 
-### 手动触发方法
+通过在Git提交消息中添加特定标签自动触发构建：
 
-#### 方法1: 使用脚本 (推荐)
+```bash
+# 基本用法
+git commit -m "更新配置 [build] [pg15]"
+git push origin main
+
+# 构建两个版本
+git commit -m "重要更新 [build] [both]"
+
+# 强制重建
+git commit -m "修复问题 [build] [pg16] [force]"
+
+# 自定义标签
+git commit -m "发布版本 [build] [both] [tag:v1.0.0]"
+```
+
+**支持的标签：**
+- 构建触发：`[build]` / `[构建]` / `--build`
+- 版本选择：`[pg15]` / `[pg16]` / `[both]`
+- 强制重建：`[force]` / `[强制]` / `--force`
+- 标签后缀：`[tag:自定义后缀]`
+
+📖 **详细用法**: [BUILD_TRIGGERS.md](./BUILD_TRIGGERS.md)
+
+#### 2. 🔧 手动触发
+
+##### 方法A: 使用脚本 (推荐)
 ```bash
 # 构建PostgreSQL 15
 ./trigger-build.sh 15
@@ -177,7 +195,7 @@ SELECT '[1,2,3]'::vector;
 ./trigger-build.sh both true
 ```
 
-#### 方法2: GitHub网页操作
+##### 方法B: GitHub网页操作
 1. 访问: https://github.com/AuroraMaster/postgresql-docker/actions
 2. 选择 "Build Custom PostgreSQL Docker Image"
 3. 点击 "Run workflow"
