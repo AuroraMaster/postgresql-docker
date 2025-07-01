@@ -36,7 +36,7 @@
 
 ```bash
 # 拉取镜像
-docker pull ghcr.io/your-username/your-repo/postgres-custom:pg15-latest
+docker pull ghcr.io/auroramaster/postgresql-docker/postgres-custom:pg15-latest
 
 # 启动容器
 docker run -d \
@@ -44,15 +44,15 @@ docker run -d \
   -e POSTGRES_PASSWORD=your_secure_password \
   -p 5432:5432 \
   -v postgres_data:/var/lib/postgresql/data \
-  ghcr.io/your-username/your-repo/postgres-custom:pg15-latest
+  ghcr.io/auroramaster/postgresql-docker/postgres-custom:pg15-latest
 ```
 
 ### 方法2: 使用Docker Compose（推荐用于开发）
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-username/your-repo.git
-cd your-repo
+git clone https://github.com/AuroraMaster/postgresql-docker.git
+cd postgresql-docker
 
 # 启动完整堆栈
 docker-compose up -d
@@ -65,8 +65,8 @@ docker-compose up -d postgres
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-username/your-repo.git
-cd your-repo
+git clone https://github.com/AuroraMaster/postgresql-docker.git
+cd postgresql-docker
 
 # 构建镜像
 docker build -t custom-postgres:local .
@@ -292,9 +292,9 @@ ORDER BY total_exec_time DESC;
 
 ## 📞 支持
 
-- 🐛 Bug报告: [GitHub Issues](https://github.com/your-username/your-repo/issues)
-- 💬 讨论: [GitHub Discussions](https://github.com/your-username/your-repo/discussions)
-- 📧 邮件: your-email@example.com
+- 🐛 Bug报告: [GitHub Issues](https://github.com/AuroraMaster/postgresql-docker/issues)
+- 💬 讨论: [GitHub Discussions](https://github.com/AuroraMaster/postgresql-docker/discussions)
+- 📧 邮件: contact@auroramaster.com
 
 ---
 
