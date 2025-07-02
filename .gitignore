@@ -13,6 +13,9 @@
 .env.*.local
 secrets/
 
+# 但包含环境变量模板
+!.env.template
+
 # 操作系统文件
 .DS_Store
 .DS_Store?

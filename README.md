@@ -1,4 +1,4 @@
-# 🐘 定制PostgreSQL Docker镜像
+🐘 # 定制PostgreSQL Docker镜像
 
 这是一个功能丰富的PostgreSQL Docker镜像，通过GitHub Actions自动构建，包含了大量常用扩展和优化配置。
 
@@ -88,77 +88,68 @@ docker run -d \
 | `POSTGRES_PASSWORD` | - | 数据库密码（必须设置） |
 | `POSTGRES_INITDB_ARGS` | - | 初始化参数 |
 
-## 📁 目录结构
-
-```
-.
-├── Dockerfile                    # Docker镜像构建文件
-├── docker-compose.yml           # Docker Compose配置
-├── .github/workflows/           # GitHub Actions工作流
-│   └── build-postgres.yml      # 自动构建和发布
-├── config/                      # 配置文件
-│   ├── postgresql.conf          # PostgreSQL主配置
-│   └── pg_hba.conf             # 客户端认证配置
-├── scripts/                     # 初始化脚本
-│   ├── docker-entrypoint.sh    # 自定义启动脚本
-│   ├── init-extensions.sql     # 扩展初始化
-│   └── init-database.sql       # 数据库初始化
-└── README.md                    # 本文档
-```
-
 ## 🎯 快速开始
 
 ### 1. 启动数据库
 
 ```bash
-docker-compose up -d postgres
+# 开发环境（仅PostgreSQL）
+make dev
+
+# 完整环境（所有服务）
+make up
 ```
 
-### 2. 连接数据库
+### 2. 初始化扩展功能
 
 ```bash
-# 使用psql连接
-docker exec -it custom-postgres psql -U postgres
-
-# 或使用外部客户端连接到 localhost:5432
+# 初始化时序、GIS、AI/RAG、OLAP、图数据库等所有扩展
+make db-init
 ```
 
-### 3. 验证扩展
+### 3. 连接数据库
+
+```bash
+# 使用命令行连接
+make db-connect
+
+# pgAdmin Web界面: http://localhost:5050
+# 用户名: admin@postgres.local / 密码: admin123
+```
+
+### 4. 验证扩展功能
 
 ```sql
 -- 查看所有已安装扩展
-SELECT * FROM installed_extensions;
+\dx
 
--- 检查数据库健康状态
-SELECT * FROM database_health_check();
+-- 测试时序数据库
+SELECT create_hypertable('test_table', 'time') FROM (
+    CREATE TABLE test_table (time TIMESTAMPTZ, value DOUBLE PRECISION)
+) AS t;
 
--- 测试PostGIS
-SELECT PostGIS_Version();
+-- 测试向量搜索
+SELECT '[1,2,3]'::vector <-> '[1,2,4]'::vector;
 
--- 测试pgvector
-SELECT '[1,2,3]'::vector;
+-- 测试地理信息
+SELECT ST_Distance(
+    ST_GeomFromText('POINT(0 0)'),
+    ST_GeomFromText('POINT(1 1)')
+);
+
+-- 测试图数据库
+SELECT * FROM ag_catalog.ag_graph;
 ```
 
-### 4. 使用pgAdmin管理界面
+## 🔄 自动构建
 
-访问 http://localhost:8080
-- 邮箱: admin@example.com
-- 密码: admin_password
-
-## 🔄 GitHub Actions自动构建
-
-本项目配置了完整的CI/CD流程，支持**多种触发方式**：
-
-### 🚀 触发方式
-
-#### 1. 📝 提交消息触发（推荐）
+### 📝 提交消息触发构建
 
 通过在Git提交消息中添加特定标签自动触发构建：
 
 ```bash
 # 基本用法
 git commit -m "更新配置 [build] [pg15]"
-git push origin main
 
 # 构建两个版本
 git commit -m "重要更新 [build] [both]"
@@ -176,11 +167,8 @@ git commit -m "发布版本 [build] [both] [tag:v1.0.0]"
 - 强制重建：`[force]` / `[强制]` / `--force`
 - 标签后缀：`[tag:自定义后缀]`
 
-📖 **详细用法**: [BUILD_TRIGGERS.md](./BUILD_TRIGGERS.md)
+### 🔧 手动触发
 
-#### 2. 🔧 手动触发
-
-##### 方法A: 使用脚本 (推荐)
 ```bash
 # 构建PostgreSQL 15
 ./build-helper.sh trigger 15
@@ -195,80 +183,63 @@ git commit -m "发布版本 [build] [both] [tag:v1.0.0]"
 ./build-helper.sh trigger both true
 ```
 
-##### 方法B: GitHub网页操作
-1. 访问: https://github.com/AuroraMaster/postgresql-docker/actions
-2. 选择 "Build Custom PostgreSQL Docker Image"
-3. 点击 "Run workflow"
-4. 选择参数:
-   - PostgreSQL版本: 15, 16, 或 both
-   - 强制重建: true/false
-5. 点击 "Run workflow"
+## 📚 详细文档
 
-### 构建流程
-1. **多架构构建** - 支持AMD64和ARM64
-2. **安全扫描** - 使用Trivy扫描漏洞
-3. **自动测试** - 验证镜像功能
-4. **自动发布** - 推送到GitHub Container Registry
-5. **创建Release** - 自动创建GitHub Release
+- 📖 **完整使用指南**: [POSTGRES_GUIDE.md](POSTGRES_GUIDE.md)
+- 📊 **扩展分类说明**: [EXTENSION_CATEGORIES.md](EXTENSION_CATEGORIES.md)
+- 📋 **Scripts说明**: [scripts/README.md](scripts/README.md)
 
-### 镜像标签
-- `pg15-latest` - PostgreSQL 15最新版本
-- `pg16-latest` - PostgreSQL 16最新版本
-- `pg15-YYYYMMDD` - 按日期标记的版本
-- `latest` - 最新稳定版本
+本数据库集成了以下功能模块：
+- 🕐 **时序数据处理** (TimescaleDB)
+- 🌍 **地理信息系统** (PostGIS生态)
+- 🤖 **AI/RAG应用** (向量数据库)
+- 📊 **OLAP分析** (分区表、列式存储)
+- 🕸️ **图数据库** (Apache AGE)
+- 📋 **审计追踪** (完整变更历史)
+- 💼 **金融科技** (风险分析、合规检查)
+- 🧬 **生物信息学** (序列分析、基因组学)
+- 🏭 **物联网** (设备管理、传感器数据)
+- 🔬 **科学计算** (数值分析、统计函数)
 
-## 🛠️ 自定义构建
+## 🛠️ 管理命令
 
-### 添加新扩展
-
-1. 修改 `Dockerfile`，添加扩展安装命令
-2. 更新 `scripts/init-extensions.sql`，添加扩展创建语句
-3. 提交到GitHub，自动触发构建
-
-### 修改配置
-
-1. 编辑 `config/postgresql.conf` 或 `config/pg_hba.conf`
-2. 提交更改，自动重新构建镜像
-
-### 本地测试
+### 数据库管理
 
 ```bash
-# 使用统一脚本进行本地测试
+# 连接数据库
+make db-connect
+
+# 备份数据库
+make db-backup
+
+# 恢复数据库
+make db-restore BACKUP_FILE=backup.sql.gz
+```
+
+### 服务管理
+
+```bash
+# 查看状态
+make status
+
+# 查看日志
+make logs-postgres
+
+# 健康检查
+make health
+```
+
+### 测试和维护
+
+```bash
+# 本地测试
 ./build-helper.sh test-local
 
-# 或手动构建测试
-docker build -t test-postgres .
-docker run --rm \
-  -e POSTGRES_PASSWORD=test \
-  test-postgres \
-  postgres --version
-```
+# 查看构建状态
+./build-helper.sh status
 
-## 📊 监控和管理
-
-### 内置监控视图
-
-```sql
--- 系统统计
-SELECT * FROM system_stats;
-
--- 查询性能统计
-SELECT * FROM pg_stat_statements
-ORDER BY total_exec_time DESC
-LIMIT 10;
-
--- 数据库活动
-SELECT * FROM pg_stat_activity;
-```
-
-### 定时任务
-
-```sql
--- 查看定时任务
-SELECT * FROM cron.job;
-
--- 添加新的定时任务
-SELECT cron.schedule('job-name', '0 2 * * *', 'VACUUM ANALYZE;');
+# 测试提交消息
+./build-helper.sh test-commit "测试消息 [build]"
 ```
 
 ## 🔒 安全建议
@@ -288,10 +259,10 @@ SELECT cron.schedule('job-name', '0 2 * * *', 'VACUUM ANALYZE;');
 3. **定期备份**
    ```bash
    # 创建备份
-   docker exec custom-postgres pg_dump -U postgres postgres > backup.sql
+   make db-backup
 
    # 恢复备份
-   docker exec -i custom-postgres psql -U postgres postgres < backup.sql
+   make db-restore BACKUP_FILE=backup_file.sql.gz
    ```
 
 ## 🤝 贡献

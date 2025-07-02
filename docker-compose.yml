@@ -1,46 +1,47 @@
 version: '3.8'
 
+# 从.env文件加载环境变量
+
 services:
+  # 主数据库服务
   postgres:
     build:
       context: .
       dockerfile: Dockerfile
-    image: custom-postgres:latest
-    container_name: custom-postgres
+      args:
+        POSTGRES_VERSION: ${POSTGRES_VERSION:-15}
+    image: ${POSTGRES_IMAGE_NAME:-custom-postgres}:${POSTGRES_IMAGE_TAG:-latest}
+    container_name: ${COMPOSE_PROJECT_NAME:-pg-custom}-postgres
     restart: unless-stopped
 
     environment:
-      # 基础配置
-      POSTGRES_DB: postgres
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres_password
-
-      # 可选配置
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
 
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
 
     volumes:
-      # 数据持久化
+      # 数据持久化 - 使用命名卷避免权限问题
       - postgres_data:/var/lib/postgresql/data
 
-      # 日志
+      # 日志目录
       - postgres_logs:/var/log/postgresql
 
-      # 备份目录
-      - ./backups:/backups
+      # 备份目录（绑定挂载到主机）
+      - ${BACKUP_PATH:-./backups}:/backups
 
-      # 自定义配置（可选，如果需要运行时修改）
-      # - ./config/postgresql.conf:/var/lib/postgresql/data/postgresql.conf
-      # - ./config/pg_hba.conf:/var/lib/postgresql/data/pg_hba.conf
+      # 自定义脚本目录（只读）
+      - ./scripts:/docker-entrypoint-initdb.d:ro
 
     # 健康检查
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
       start_period: 60s
 
     # 资源限制
@@ -54,86 +55,192 @@ services:
           cpus: '0.5'
 
     networks:
-      - postgres_network
+      - pg_network
 
-  # 可选：PostgreSQL管理工具 pgAdmin
+    labels:
+      - "traefik.enable=false"
+      - "project=${PROJECT_NAME}"
+
+  # PostgreSQL 管理界面
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: pgadmin
+    container_name: ${COMPOSE_PROJECT_NAME:-pg-custom}-pgadmin
     restart: unless-stopped
+    profiles: ["admin", "full"]  # 可选服务，使用 profile 控制
 
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@example.com
-      PGADMIN_DEFAULT_PASSWORD: admin_password
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
       PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+      PGADMIN_LISTEN_PORT: 80
 
     ports:
-      - "8080:80"
+      - "${PGADMIN_PORT:-8080}:80"
 
     volumes:
       - pgadmin_data:/var/lib/pgadmin
+      - ./config/pgadmin/servers.json:/pgadmin4/servers.json:ro
 
     depends_on:
       postgres:
         condition: service_healthy
 
     networks:
-      - postgres_network
+      - pg_network
 
-  # 可选：Redis (常与PostgreSQL配合使用)
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.localhost`)"
+      - "project=${PROJECT_NAME}"
+
+  # Redis 缓存服务
   redis:
     image: redis:7-alpine
-    container_name: redis
+    container_name: ${COMPOSE_PROJECT_NAME:-pg-custom}-redis
     restart: unless-stopped
+    profiles: ["cache", "full"]  # 可选服务
 
-    command: redis-server --appendonly yes --requirepass redis_password
+    command: >
+      sh -c "
+        redis-server
+        --appendonly yes
+        --requirepass ${REDIS_PASSWORD}
+        --maxmemory 256mb
+        --maxmemory-policy allkeys-lru
+      "
 
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
 
     volumes:
       - redis_data:/data
 
-    networks:
-      - postgres_network
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
 
-  # 可选：Nginx (用于反向代理)
+    networks:
+      - pg_network
+
+    labels:
+      - "project=${PROJECT_NAME}"
+
+  # Nginx 反向代理
   nginx:
     image: nginx:alpine
-    container_name: nginx
+    container_name: ${COMPOSE_PROJECT_NAME:-pg-custom}-nginx
     restart: unless-stopped
+    profiles: ["proxy", "full"]  # 可选服务
 
     ports:
-      - "80:80"
-      - "443:443"
+      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_SSL_PORT:-443}:443"
 
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - nginx_logs:/var/log/nginx
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ${NGINX_LOGS_PATH:-./logs/nginx}:/var/log/nginx
+      - ./ssl:/etc/nginx/ssl:ro
 
     depends_on:
-      - postgres
-      - pgadmin
+      postgres:
+        condition: service_healthy
 
     networks:
-      - postgres_network
+      - pg_network
+
+    labels:
+      - "project=${PROJECT_NAME}"
+
+  # 监控服务 (可选)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-pg-custom}-prometheus
+    restart: unless-stopped
+    profiles: ["monitoring", "full"]  # 可选服务
+
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+
+    volumes:
+      - ./config/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+
+    networks:
+      - pg_network
+
+    labels:
+      - "project=${PROJECT_NAME}"
+
+  # 可视化监控 (可选)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-pg-custom}-grafana
+    restart: unless-stopped
+    profiles: ["monitoring", "full"]  # 可选服务
+
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${POSTGRES_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: false
+
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana:/etc/grafana/provisioning:ro
+
+    depends_on:
+      - prometheus
+
+    networks:
+      - pg_network
+
+    labels:
+      - "project=${PROJECT_NAME}"
 
 volumes:
+  # PostgreSQL 数据卷
   postgres_data:
     driver: local
+    name: ${COMPOSE_PROJECT_NAME:-pg-custom}_postgres_data
   postgres_logs:
     driver: local
+    name: ${COMPOSE_PROJECT_NAME:-pg-custom}_postgres_logs
+
+  # pgAdmin 数据卷
   pgadmin_data:
     driver: local
+    name: ${COMPOSE_PROJECT_NAME:-pg-custom}_pgadmin_data
+
+  # Redis 数据卷
   redis_data:
     driver: local
-  nginx_logs:
+    name: ${COMPOSE_PROJECT_NAME:-pg-custom}_redis_data
+
+  # 监控数据卷
+  prometheus_data:
     driver: local
+    name: ${COMPOSE_PROJECT_NAME:-pg-custom}_prometheus_data
+  grafana_data:
+    driver: local
+    name: ${COMPOSE_PROJECT_NAME:-pg-custom}_grafana_data
 
 networks:
-  postgres_network:
+  pg_network:
+    name: ${NETWORK_NAME:-pg-network}
     driver: bridge
     ipam:
+      driver: default
       config:
-        - subnet: 172.20.0.0/16
+        - subnet: ${SUBNET:-172.20.0.0/16}

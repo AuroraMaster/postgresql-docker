@@ -5,6 +5,11 @@
 
 set -e
 
+# 加载环境变量文件
+if [ -f .env ]; then
+    export $(grep -v '^#' .env | grep -v '^$' | xargs)
+fi
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -22,7 +27,7 @@ show_help() {
     echo
     echo "📋 可用命令:"
     echo "  trigger <version> [force]  - 手动触发GitHub Actions构建"
-    echo "  test-local                 - 本地构建和测试Docker镜像"
+    echo "  test-local [mode]          - 本地构建和测试Docker镜像"
     echo "  test-commit <message>      - 测试提交消息解析逻辑"
     echo "  status                     - 检查最近的构建状态"
     echo "  help                       - 显示此帮助信息"
@@ -30,7 +35,8 @@ show_help() {
     echo "📖 示例:"
     echo "  $0 trigger 15              # 触发PG15构建"
     echo "  $0 trigger both true       # 强制构建两个版本"
-    echo "  $0 test-local              # 本地测试构建"
+    echo "  $0 test-local              # 完整本地测试"
+    echo "  $0 test-local quick        # 快速本地测试"
     echo "  $0 test-commit \"修复问题 [build] [pg15]\""
     echo "  $0 status                  # 查看构建状态"
     echo
@@ -84,33 +90,141 @@ trigger_build() {
 
 # 本地测试构建
 test_local() {
+    local mode="${1:-full}"  # full, quick
+
     echo -e "${BLUE}🧪 本地Docker构建和测试${NC}"
     echo "========================="
 
-    if [ -f "./test-local.sh" ]; then
-        echo "📋 运行详细的本地测试脚本..."
-        ./test-local.sh
+    local image_name="custom-postgres:test"
+    local container_name="test-postgres"
+    local test_password="test_password_123"
+
+    # 清理函数
+    cleanup_test() {
+        echo -e "${YELLOW}🧹 清理测试环境...${NC}"
+        docker stop $container_name 2>/dev/null || true
+        docker rm $container_name 2>/dev/null || true
+    }
+
+    # 设置退出时自动清理
+    trap cleanup_test EXIT
+
+    # 1. 构建镜像
+    echo "🔨 构建Docker镜像..."
+    if docker build -t $image_name .; then
+        echo -e "${GREEN}✅ 镜像构建成功${NC}"
     else
-        echo -e "${YELLOW}⚠️  详细测试脚本不存在，执行简单测试...${NC}"
+        echo -e "${RED}❌ 镜像构建失败${NC}"
+        return 1
+    fi
 
-        local test_tag="postgres-custom:test"
+    if [ "$mode" = "quick" ]; then
+        echo "🚀 快速版本测试..."
+        docker run --rm \
+            -e POSTGRES_PASSWORD=$test_password \
+            $image_name \
+            postgres --version
+        echo -e "${GREEN}🎉 快速测试完成！${NC}"
+        return 0
+    fi
 
-        echo "🔨 构建测试镜像..."
-        if docker build -t "$test_tag" .; then
-            echo -e "${GREEN}✅ 镜像构建成功${NC}"
-        else
-            echo -e "${RED}❌ 镜像构建失败${NC}"
+    # 完整测试模式
+    echo "🚀 启动PostgreSQL容器..."
+    docker run -d \
+        --name $container_name \
+        -e POSTGRES_PASSWORD=$test_password \
+        -e POSTGRES_DB=testdb \
+        -p 15432:5432 \
+        $image_name
+
+    # 等待容器启动
+    echo "⏳ 等待PostgreSQL启动..."
+    for i in {1..30}; do
+        if docker exec $container_name pg_isready -U postgres >/dev/null 2>&1; then
+            echo -e "${GREEN}✅ PostgreSQL已启动${NC}"
+            break
+        fi
+        if [ $i -eq 30 ]; then
+            echo -e "${RED}❌ PostgreSQL启动超时${NC}"
+            docker logs $container_name
             return 1
         fi
+        sleep 2
+    done
 
-        echo "🧪 快速功能测试..."
-        docker run --rm \
-            -e POSTGRES_PASSWORD=testpass \
-            "$test_tag" \
-            postgres --version
+    # 测试基本连接
+    echo "🔍 测试数据库连接..."
+    if docker exec $container_name psql -U postgres -d testdb -c "SELECT version();" >/dev/null; then
+        echo -e "${GREEN}✅ 数据库连接正常${NC}"
+    else
+        echo -e "${RED}❌ 数据库连接失败${NC}"
+        return 1
+    fi
 
-        echo -e "${GREEN}🎉 简单测试完成！${NC}"
-        echo "💡 运行完整测试请执行: ./test-local.sh"
+    # 测试扩展
+    echo "🧩 测试PostgreSQL扩展..."
+
+    # 测试PostGIS
+    if docker exec $container_name psql -U postgres -d testdb -c "SELECT PostGIS_Version();" >/dev/null 2>&1; then
+        echo -e "${GREEN}✅ PostGIS扩展正常${NC}"
+    else
+        echo -e "${YELLOW}⚠️  PostGIS扩展测试失败${NC}"
+    fi
+
+    # 测试pgvector
+    if docker exec $container_name psql -U postgres -d testdb -c "SELECT '[1,2,3]'::vector;" >/dev/null 2>&1; then
+        echo -e "${GREEN}✅ pgvector扩展正常${NC}"
+    else
+        echo -e "${YELLOW}⚠️  pgvector扩展测试失败${NC}"
+    fi
+
+    # 测试自定义功能
+    echo "🔧 测试自定义功能..."
+
+    # 测试已安装扩展视图
+    if docker exec $container_name psql -U postgres -d testdb -c "SELECT COUNT(*) FROM installed_extensions;" >/dev/null 2>&1; then
+        echo -e "${GREEN}✅ 自定义视图正常${NC}"
+
+        # 显示已安装扩展数量
+        local ext_count=$(docker exec $container_name psql -U postgres -d testdb -t -c "SELECT COUNT(*) FROM installed_extensions;" 2>/dev/null | tr -d ' ')
+        echo "📦 已安装 $ext_count 个扩展"
+    else
+        echo -e "${YELLOW}⚠️  自定义视图测试失败${NC}"
+    fi
+
+    # 简单性能测试
+    echo "⚡ 简单性能测试..."
+    local start_time=$(date +%s)
+    docker exec $container_name psql -U postgres -d testdb -c "
+        DO \$\$
+        BEGIN
+            FOR i IN 1..1000 LOOP
+                INSERT INTO users (username, email, password_hash, full_name)
+                VALUES ('test_user_' || i, 'test' || i || '@example.com', 'hash', 'Test User ' || i)
+                ON CONFLICT (username) DO NOTHING;
+            END LOOP;
+        END \$\$;
+    " >/dev/null 2>&1
+
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+    echo -e "${GREEN}✅ 插入1000条记录耗时 ${duration}秒${NC}"
+
+    # 显示容器资源使用
+    echo "📊 容器资源使用:"
+    docker stats $container_name --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}" 2>/dev/null || echo "无法获取资源统计"
+
+    echo -e "${GREEN}🎉 完整测试完成！${NC}"
+
+    # 询问是否保留容器
+    echo
+    read -p "是否保留容器进行手动测试？(y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "${BLUE}容器 $container_name 将继续运行${NC}"
+        echo "连接: docker exec -it $container_name psql -U postgres -d testdb"
+        echo "停止: docker stop $container_name && docker rm $container_name"
+        trap - EXIT  # 取消自动清理
     fi
 }
 
