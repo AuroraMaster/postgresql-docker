@@ -107,7 +107,13 @@ build_image() {
     # 确定使用的Dockerfile
     local dockerfile="Dockerfile"
     if [ "$build_type" = "optimized" ]; then
-        dockerfile="Dockerfile.optimized"
+        # 检查是否存在专用的优化版本Dockerfile
+        if [ -f "Dockerfile.optimized" ]; then
+            dockerfile="Dockerfile.optimized"
+        else
+            # 使用主Dockerfile（已包含优化）
+            dockerfile="Dockerfile"
+        fi
 
         # 启用BuildKit
         export DOCKER_BUILDKIT=1

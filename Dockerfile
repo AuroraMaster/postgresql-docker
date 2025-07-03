@@ -122,63 +122,158 @@ RUN if [ "$NETWORK_ENVIRONMENT" = "international" ] || [ "$PIP_INDEX_URL" = "htt
             psycopg2-binary==2.9.7; \
     fi
 
-# 第四层：PostgreSQL核心扩展 (增强容错性)
+# 第四层：PostgreSQL核心扩展 (增强容错性和包可用性检查)
 RUN apt-get clean && \
     apt-get update --fix-missing && \
+    echo "🔍 Checking package availability..." && \
+    apt-cache search postgresql-16 | head -20 && \
+    echo "📦 Installing core PostgreSQL extensions..." && \
     apt-get install -y --no-install-recommends \
         postgresql-contrib-16 \
+    && echo "✅ postgresql-contrib-16 installed" && \
+    \
+    # PostGIS extensions (core GIS functionality)
+    (apt-get install -y --no-install-recommends \
         postgresql-16-postgis-3 \
         postgresql-16-postgis-3-scripts \
+    && echo "✅ PostGIS extensions installed") || echo "⚠️  PostGIS not available, skipping" && \
+    \
+    # pgRouting (routing functionality)
+    (apt-get install -y --no-install-recommends \
         postgresql-16-pgrouting \
+    && echo "✅ pgRouting installed") || echo "⚠️  pgRouting not available, skipping" && \
+    \
+    # TimescaleDB (time-series database)
+    (apt-get install -y --no-install-recommends \
         timescaledb-2-postgresql-16 \
+    && echo "✅ TimescaleDB installed") || echo "⚠️  TimescaleDB not available, skipping" && \
+    \
+    # Citus (distributed PostgreSQL)
+    (apt-get install -y --no-install-recommends \
         postgresql-16-citus-12.1 \
+    && echo "✅ Citus installed") || (apt-get install -y --no-install-recommends \
+        postgresql-16-citus \
+    && echo "✅ Citus (generic version) installed") || echo "⚠️  Citus not available, skipping" && \
+    \
+    # pgvector (vector similarity search)
+    (apt-get install -y --no-install-recommends \
         postgresql-16-pgvector \
+    && echo "✅ pgvector installed") || echo "⚠️  pgvector not available, skipping" && \
+    \
+    # RUM index (full-text search enhancement)
+    (apt-get install -y --no-install-recommends \
         postgresql-16-rum \
-    && apt-get clean && \
+    && echo "✅ RUM index installed") || echo "⚠️  RUM index not available, skipping" && \
+    \
+    apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# 第五层：专业扩展 (增强容错性)
+# 第五层：专业扩展 (逐个安装，增强容错性)
 RUN apt-get clean && \
     apt-get update --fix-missing && \
-    apt-get install -y --no-install-recommends \
+    echo "📦 Installing specialized extensions..." && \
+    \
+    # Graph database extension
+    (apt-get install -y --no-install-recommends \
         postgresql-16-age \
+    && echo "✅ Apache AGE (graph) installed") || echo "⚠️  Apache AGE not available, skipping" && \
+    \
+    # Performance and analysis extensions
+    (apt-get install -y --no-install-recommends \
         postgresql-16-hypopg \
+    && echo "✅ HypoPG installed") || echo "⚠️  HypoPG not available, skipping" && \
+    \
+    (apt-get install -y --no-install-recommends \
         postgresql-16-hll \
+    && echo "✅ HyperLogLog installed") || echo "⚠️  HyperLogLog not available, skipping" && \
+    \
+    (apt-get install -y --no-install-recommends \
         postgresql-16-similarity \
+    && echo "✅ Similarity extension installed") || echo "⚠️  Similarity not available, skipping" && \
+    \
+    # Scheduler and maintenance
+    (apt-get install -y --no-install-recommends \
         postgresql-16-cron \
+    && echo "✅ pg_cron installed") || echo "⚠️  pg_cron not available, skipping" && \
+    \
+    (apt-get install -y --no-install-recommends \
         postgresql-16-partman \
+    && echo "✅ pg_partman installed") || echo "⚠️  pg_partman not available, skipping" && \
+    \
+    (apt-get install -y --no-install-recommends \
         postgresql-16-repack \
+    && echo "✅ pg_repack installed") || echo "⚠️  pg_repack not available, skipping" && \
+    \
+    # Data type extensions
+    (apt-get install -y --no-install-recommends \
         postgresql-16-jsquery \
+    && echo "✅ jsquery installed") || echo "⚠️  jsquery not available, skipping" && \
+    \
+    (apt-get install -y --no-install-recommends \
         postgresql-16-periods \
+    && echo "✅ periods installed") || echo "⚠️  periods not available, skipping" && \
+    \
+    (apt-get install -y --no-install-recommends \
         postgresql-16-numeral \
+    && echo "✅ numeral installed") || echo "⚠️  numeral not available, skipping" && \
+    \
+    (apt-get install -y --no-install-recommends \
         postgresql-16-ip4r \
+    && echo "✅ ip4r installed") || echo "⚠️  ip4r not available, skipping" && \
+    \
+    (apt-get install -y --no-install-recommends \
         postgresql-16-prefix \
+    && echo "✅ prefix installed") || echo "⚠️  prefix not available, skipping" && \
+    \
+    (apt-get install -y --no-install-recommends \
         postgresql-16-semver \
+    && echo "✅ semver installed") || echo "⚠️  semver not available, skipping" && \
+    \
+    (apt-get install -y --no-install-recommends \
         postgresql-16-tdigest \
-    && apt-get clean && \
+    && echo "✅ tdigest installed") || echo "⚠️  tdigest not available, skipping" && \
+    \
+    apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# 第六层：GIS和连接扩展 (增强容错性)
+# 第六层：GIS和连接扩展 (容错处理)
 RUN apt-get clean && \
     apt-get update --fix-missing && \
-    apt-get install -y --no-install-recommends \
+    echo "📦 Installing GIS and connectivity extensions..." && \
+    \
+    # GIS extensions
+    (apt-get install -y --no-install-recommends \
         postgresql-16-pointcloud \
+    && echo "✅ pointcloud installed") || echo "⚠️  pointcloud not available, skipping" && \
+    \
+    (apt-get install -y --no-install-recommends \
         postgresql-16-ogr-fdw \
+    && echo "✅ ogr-fdw installed") || echo "⚠️  ogr-fdw not available, skipping" && \
+    \
+    (apt-get install -y --no-install-recommends \
         postgresql-16-q3c \
+    && echo "✅ q3c installed") || echo "⚠️  q3c not available, skipping" && \
+    \
+    # Foreign data wrappers
+    (apt-get install -y --no-install-recommends \
         postgresql-16-mysql-fdw \
+    && echo "✅ mysql-fdw installed") || echo "⚠️  mysql-fdw not available, skipping" && \
+    \
+    # High availability and replication
+    (apt-get install -y --no-install-recommends \
         postgresql-16-auto-failover \
+    && echo "✅ auto-failover installed") || echo "⚠️  auto-failover not available, skipping" && \
+    \
+    (apt-get install -y --no-install-recommends \
         postgresql-16-bgw-replstatus \
-        postgresql-16-londiste-sql \
-        postgresql-16-plr \
-        postgresql-16-dirtyread \
-        postgresql-16-extra-window-functions \
-        postgresql-16-first-last-agg \
-        postgresql-16-icu-ext \
-        postgresql-16-omnidb \
-        postgresql-16-decoderbufs \
-        postgresql-16-asn1oid \
-        postgresql-16-debversion \
-    && apt-get clean && \
+    && echo "✅ bgw-replstatus installed") || echo "⚠️  bgw-replstatus not available, skipping" && \
+    \
+    # Additional extensions (install what's available)
+    apt-get install -y --no-install-recommends \
+        $(apt-cache search postgresql-16- | grep -E "(plr|dirtyread|extra-window|first-last|icu-ext)" | cut -d' ' -f1 | head -10) \
+    || echo "⚠️  Some additional extensions not available" && \
+    \
+    apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ================================================================
