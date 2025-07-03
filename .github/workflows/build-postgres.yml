@@ -11,12 +11,10 @@ on:
       postgres_version:
         description: 'PostgreSQL version to build'
         required: true
-        default: '15'
+        default: '16'
         type: choice
         options:
-          - '15'
           - '16'
-          - 'both'
       tag_suffix:
         description: 'Additional tag suffix'
         required: false
@@ -62,7 +60,7 @@ jobs:
 
           # 默认值
           SHOULD_BUILD="false"
-          PG_VERSION="15"
+          PG_VERSION="16"
           FORCE_REBUILD="false"
           TAG_SUFFIX=""
 
@@ -72,15 +70,10 @@ jobs:
             echo "✅ Build trigger found in commit message"
 
             # 解析PostgreSQL版本
-            if echo "$COMMIT_MSG" | grep -qE "\[pg15\]|\[postgresql-15\]|--pg15"; then
-              PG_VERSION="15"
-              echo "📦 PostgreSQL 15 specified"
-            elif echo "$COMMIT_MSG" | grep -qE "\[pg16\]|\[postgresql-16\]|--pg16"; then
+            if echo "$COMMIT_MSG" | grep -qE "\[pg16\]|\[postgresql-16\]|--pg16"; then
               PG_VERSION="16"
               echo "📦 PostgreSQL 16 specified"
-            elif echo "$COMMIT_MSG" | grep -qE "\[pgboth\]|\[postgresql-both\]|--pgboth|\[both\]"; then
-              PG_VERSION="both"
-              echo "📦 Both PostgreSQL versions specified"
+            # Note: Only PostgreSQL 16 is supported now
             fi
 
             # 检查强制重建
@@ -103,55 +96,6 @@ jobs:
           echo "force_rebuild=$FORCE_REBUILD" >> $GITHUB_OUTPUT
           echo "tag_suffix=$TAG_SUFFIX" >> $GITHUB_OUTPUT
         fi
-
-  build-pg15:
-    needs: parse-commit
-    runs-on: ubuntu-latest
-    if: ${{ needs.parse-commit.outputs.should_build == 'true' && (needs.parse-commit.outputs.postgres_version == '15' || needs.parse-commit.outputs.postgres_version == 'both') }}
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Set up QEMU
-      uses: docker/setup-qemu-action@v3
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Log in to Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch
-          type=sha
-          type=raw,value=pg15-latest
-          type=raw,value=pg15-{{date 'YYYYMMDD'}}
-          type=raw,value=latest
-
-    - name: Build and push PostgreSQL 15 Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./Dockerfile
-        platforms: linux/amd64,linux/arm64
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: ${{ needs.parse-commit.outputs.force_rebuild == 'false' && 'type=gha' || '' }}
-        cache-to: type=gha,mode=max
 
   build-pg16:
     needs: parse-commit
@@ -188,6 +132,24 @@ jobs:
           type=sha
           type=raw,value=pg16-latest
           type=raw,value=pg16-{{date 'YYYYMMDD'}}
+          type=raw,value=latest
+
+    - name: Configure build environment for international network
+      run: |
+        echo "🌐 Configuring international network environment..."
+
+        # 检测网络环境
+        if curl -s --connect-timeout 5 https://www.google.com > /dev/null; then
+          echo "NETWORK_ENVIRONMENT=international" >> $GITHUB_ENV
+          echo "✅ International network detected"
+        else
+          echo "NETWORK_ENVIRONMENT=china" >> $GITHUB_ENV
+          echo "🇨🇳 China network detected"
+        fi
+
+        # 为Docker构建设置网络优化参数
+        echo "BUILDKIT_PROGRESS=plain" >> $GITHUB_ENV
+        echo "DOCKER_BUILDKIT=1" >> $GITHUB_ENV
 
     - name: Build and push PostgreSQL 16 Docker image
       uses: docker/build-push-action@v5
@@ -200,23 +162,21 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         build-args: |
           POSTGRES_VERSION=16
+          NETWORK_ENVIRONMENT=${{ env.NETWORK_ENVIRONMENT }}
+          DEBIAN_MIRROR=international
+          PIP_INDEX_URL=https://pypi.org/simple
+          SKIP_GIT_EXTENSIONS=false
         cache-from: ${{ needs.parse-commit.outputs.force_rebuild == 'false' && 'type=gha' || '' }}
         cache-to: type=gha,mode=max
 
   security-scan:
-    needs: [parse-commit, build-pg15, build-pg16]
+    needs: [parse-commit, build-pg16]
     runs-on: ubuntu-latest
-    if: always() && (needs.build-pg15.result == 'success' || needs.build-pg16.result == 'success')
+    if: always() && (needs.build-pg16.result == 'success')
 
     strategy:
       matrix:
-        version:
-          - ${{ needs.parse-commit.outputs.postgres_version == '15' && '15' || '' }}
-          - ${{ needs.parse-commit.outputs.postgres_version == '16' && '16' || '' }}
-          - ${{ needs.parse-commit.outputs.postgres_version == 'both' && '15' || '' }}
-          - ${{ needs.parse-commit.outputs.postgres_version == 'both' && '16' || '' }}
-        exclude:
-          - version: ''
+        version: ['16']
 
     steps:
     - name: Run security scan
@@ -233,19 +193,13 @@ jobs:
         sarif_file: 'trivy-results-pg${{ matrix.version }}.sarif'
 
   test:
-    needs: [parse-commit, build-pg15, build-pg16]
+    needs: [parse-commit, build-pg16]
     runs-on: ubuntu-latest
-    if: always() && (needs.build-pg15.result == 'success' || needs.build-pg16.result == 'success')
+    if: always() && (needs.build-pg16.result == 'success')
 
     strategy:
       matrix:
-        version:
-          - ${{ needs.parse-commit.outputs.postgres_version == '15' && '15' || '' }}
-          - ${{ needs.parse-commit.outputs.postgres_version == '16' && '16' || '' }}
-          - ${{ needs.parse-commit.outputs.postgres_version == 'both' && '15' || '' }}
-          - ${{ needs.parse-commit.outputs.postgres_version == 'both' && '16' || '' }}
-        exclude:
-          - version: ''
+        version: ['16']
 
     steps:
     - name: Test PostgreSQL ${{ matrix.version }} Docker image
@@ -258,7 +212,7 @@ jobs:
           --name test-postgres-${{ matrix.version }} \
           -e POSTGRES_PASSWORD=testpass \
           -e POSTGRES_DB=testdb \
-          -p ${{ matrix.version == '15' && '5432' || '5433' }}:5432 \
+          -p 5432:5432 \
           ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pg${{ matrix.version }}-latest
 
         # 等待容器启动
@@ -280,9 +234,9 @@ jobs:
         docker rm test-postgres-${{ matrix.version }}
 
   create-release:
-    needs: [parse-commit, build-pg15, build-pg16, test]
+    needs: [parse-commit, build-pg16, test]
     runs-on: ubuntu-latest
-    if: always() && (needs.build-pg15.result == 'success' || needs.build-pg16.result == 'success') && needs.test.result == 'success'
+    if: always() && (needs.build-pg16.result == 'success') && needs.test.result == 'success'
 
     steps:
     - name: Checkout repository
@@ -300,9 +254,8 @@ jobs:
           ## 🐘 Custom PostgreSQL Docker Images
 
           ### 🚀 Built Images:
-          ${{ needs.parse-commit.outputs.postgres_version == '15' && format('- `{0}/{1}:pg15-latest`', env.REGISTRY, env.IMAGE_NAME) || '' }}
-          ${{ needs.parse-commit.outputs.postgres_version == '16' && format('- `{0}/{1}:pg16-latest`', env.REGISTRY, env.IMAGE_NAME) || '' }}
-          ${{ needs.parse-commit.outputs.postgres_version == 'both' && format('- `{0}/{1}:pg15-latest`\n- `{0}/{1}:pg16-latest`', env.REGISTRY, env.IMAGE_NAME, env.REGISTRY, env.IMAGE_NAME) || '' }}
+          - `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pg16-latest`
+          - `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest`
 
           ### 📦 Included Extensions:
           - PostGIS (地理信息系统)
@@ -315,11 +268,11 @@ jobs:
 
           ### 🔧 Usage:
           ```bash
-          # PostgreSQL 15
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pg15-latest
-          docker run -d --name my-postgres -e POSTGRES_PASSWORD=yourpassword -p 5432:5432 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pg15-latest
+          # PostgreSQL 16 (Default)
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          docker run -d --name my-postgres -e POSTGRES_PASSWORD=yourpassword -p 5432:5432 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-          # PostgreSQL 16
+          # PostgreSQL 16 (Specific Tag)
           docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pg16-latest
           docker run -d --name my-postgres -e POSTGRES_PASSWORD=yourpassword -p 5432:5432 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pg16-latest
           ```

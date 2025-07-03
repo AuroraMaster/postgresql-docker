@@ -4,7 +4,7 @@
 -- 启用必要的扩展
 CREATE EXTENSION IF NOT EXISTS temporal_tables;
 CREATE EXTENSION IF NOT EXISTS periods;
--- CREATE EXTENSION IF NOT EXISTS pg_cron; -- 已在Dockerfile中通过postgresql-15-cron安装并在shared_preload_libraries中配置
+-- CREATE EXTENSION IF NOT EXISTS pg_cron; -- 已在Dockerfile中通过postgresql-16-cron安装并在shared_preload_libraries中配置
 
 -- 创建审计日志架构
 CREATE SCHEMA IF NOT EXISTS audit;

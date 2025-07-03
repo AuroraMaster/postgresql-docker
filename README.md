@@ -36,7 +36,7 @@
 
 ```bash
 # 拉取镜像
-docker pull ghcr.io/auroramaster/postgresql-docker/postgres-custom:pg15-latest
+docker pull ghcr.io/auroramaster/postgresql-docker/postgres-custom:pg16-latest
 
 # 启动容器
 docker run -d \
@@ -44,7 +44,7 @@ docker run -d \
   -e POSTGRES_PASSWORD=your_secure_password \
   -p 5432:5432 \
   -v postgres_data:/var/lib/postgresql/data \
-  ghcr.io/auroramaster/postgresql-docker/postgres-custom:pg15-latest
+  ghcr.io/auroramaster/postgresql-docker/postgres-custom:pg16-latest
 ```
 
 ### 方法2: 使用Docker Compose（推荐用于开发）
@@ -61,23 +61,39 @@ docker-compose up -d
 docker-compose up -d postgres
 ```
 
-### 方法3: 本地构建
+### 方法3: 本地构建 (智能网络环境适配)
 
 ```bash
 # 克隆仓库
 git clone https://github.com/AuroraMaster/postgresql-docker.git
 cd postgresql-docker
 
-# 构建镜像
-docker build -t custom-postgres:local .
+# 自动检测网络环境并构建（推荐）
+./build.sh build optimized latest auto
+
+# 国内网络环境（使用清华镜像源加速）
+./build.sh build optimized latest china
+
+# 国际网络环境（使用官方镜像源）
+./build.sh build optimized latest international
 
 # 运行容器
 docker run -d \
   --name my-postgres \
   -e POSTGRES_PASSWORD=your_password \
   -p 5432:5432 \
-  custom-postgres:local
+  custom-postgres:latest
 ```
+
+### 🌐 网络环境说明
+
+本项目支持智能网络环境检测，确保在不同网络环境下都能获得最佳构建性能：
+
+- **🇨🇳 国内环境**: 自动使用清华大学等国内镜像源，显著提升下载速度
+- **🌍 国际环境**: 使用官方镜像源，确保GitHub Actions等CI/CD环境稳定运行
+- **🔄 自动检测**: 自动检测网络环境并选择最优镜像源配置
+
+详细配置说明请查看: [NETWORK_OPTIMIZATION.md](NETWORK_OPTIMIZATION.md)
 
 ## 🔧 环境变量
 
@@ -149,7 +165,7 @@ SELECT * FROM ag_catalog.ag_graph;
 
 ```bash
 # 基本用法
-git commit -m "更新配置 [build] [pg15]"
+git commit -m "更新配置 [build] [pg16]"
 
 # 构建两个版本
 git commit -m "重要更新 [build] [both]"
@@ -163,15 +179,15 @@ git commit -m "发布版本 [build] [both] [tag:v1.0.0]"
 
 **支持的标签：**
 - 构建触发：`[build]` / `[构建]` / `--build`
-- 版本选择：`[pg15]` / `[pg16]` / `[both]`
+- 版本选择：`[pg16]` (默认)
 - 强制重建：`[force]` / `[强制]` / `--force`
 - 标签后缀：`[tag:自定义后缀]`
 
 ### 🔧 手动触发
 
 ```bash
-# 构建PostgreSQL 15
-./build-helper.sh trigger 15
+# 构建PostgreSQL 16 (默认)
+./build-helper.sh trigger 16
 
 # 构建PostgreSQL 16
 ./build-helper.sh trigger 16

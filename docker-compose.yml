@@ -9,7 +9,8 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        POSTGRES_VERSION: ${POSTGRES_VERSION:-15}
+        POSTGRES_VERSION: ${POSTGRES_VERSION:-16}
+        SKIP_GIT_EXTENSIONS: ${SKIP_GIT_EXTENSIONS:-false}
     image: ${POSTGRES_IMAGE_NAME:-custom-postgres}:${POSTGRES_IMAGE_TAG:-latest}
     container_name: ${COMPOSE_PROJECT_NAME:-pg-custom}-postgres
     restart: unless-stopped
@@ -44,7 +45,7 @@ services:
       retries: 5
       start_period: 60s
 
-    # 资源限制
+    # 资源限制 (生产环境)
     deploy:
       resources:
         limits:
@@ -53,12 +54,53 @@ services:
         reservations:
           memory: 512M
           cpus: '0.5'
+    profiles: ["default", "prod", "full"]
 
     networks:
       - pg_network
 
     labels:
       - "traefik.enable=false"
+      - "project=${PROJECT_NAME}"
+
+  # 开发环境PostgreSQL (轻量配置)
+  postgres-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        POSTGRES_VERSION: ${POSTGRES_VERSION:-16}
+    image: ${POSTGRES_IMAGE_NAME:-custom-postgres}:dev
+    container_name: ${COMPOSE_PROJECT_NAME:-pg-custom}-postgres-dev
+    restart: unless-stopped
+    profiles: ["dev"]
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-your_secure_password_123}
+
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ${BACKUP_PATH:-./backups}:/backups
+      - ./scripts:/docker-entrypoint-initdb.d:ro
+
+    # 开发环境健康检查 (更宽松的配置)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    networks:
+      - pg_dev_network
+
+    labels:
+      - "environment=development"
       - "project=${PROJECT_NAME}"
 
   # PostgreSQL 管理界面
@@ -73,7 +115,7 @@ services:
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
       PGADMIN_CONFIG_SERVER_MODE: 'False'
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
-      PGADMIN_LISTEN_PORT: 80
+      PGLADMIN_LISTEN_PORT: 80
 
     ports:
       - "${PGADMIN_PORT:-8080}:80"
@@ -198,7 +240,6 @@ services:
 
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./config/grafana:/etc/grafana/provisioning:ro
 
     depends_on:
       - prometheus
@@ -209,38 +250,63 @@ services:
     labels:
       - "project=${PROJECT_NAME}"
 
+# ================================================================
+# 数据卷定义
+# ================================================================
+
 volumes:
-  # PostgreSQL 数据卷
+  # 生产环境数据卷
   postgres_data:
     driver: local
-    name: ${COMPOSE_PROJECT_NAME:-pg-custom}_postgres_data
+    labels:
+      - "environment=production"
+      - "backup=daily"
+
   postgres_logs:
     driver: local
-    name: ${COMPOSE_PROJECT_NAME:-pg-custom}_postgres_logs
+    labels:
+      - "type=logs"
 
-  # pgAdmin 数据卷
+  # 开发环境数据卷
+  postgres_dev_data:
+    driver: local
+    labels:
+      - "environment=development"
+      - "backup=weekly"
+
+  # 管理工具数据卷
   pgadmin_data:
     driver: local
-    name: ${COMPOSE_PROJECT_NAME:-pg-custom}_pgadmin_data
 
-  # Redis 数据卷
+  # 缓存和监控数据卷
   redis_data:
     driver: local
-    name: ${COMPOSE_PROJECT_NAME:-pg-custom}_redis_data
 
-  # 监控数据卷
   prometheus_data:
     driver: local
-    name: ${COMPOSE_PROJECT_NAME:-pg-custom}_prometheus_data
+
   grafana_data:
     driver: local
-    name: ${COMPOSE_PROJECT_NAME:-pg-custom}_grafana_data
+
+# ================================================================
+# 网络定义
+# ================================================================
 
 networks:
+  # 生产网络
   pg_network:
-    name: ${NETWORK_NAME:-pg-network}
     driver: bridge
+    labels:
+      - "environment=production"
     ipam:
-      driver: default
       config:
-        - subnet: ${SUBNET:-172.20.0.0/16}
+        - subnet: 172.20.0.0/16
+
+  # 开发网络
+  pg_dev_network:
+    driver: bridge
+    labels:
+      - "environment=development"
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

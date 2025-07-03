@@ -1,8 +1,8 @@
 # PostgreSQL Docker 项目 Makefile
 # 使用方法: make <target>
 
-# 包含环境变量
-include .env
+# 包含环境变量 (如果存在)
+-include .env
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -86,21 +86,46 @@ clean: ## 清理所有数据和容器
 	docker-compose down -v --remove-orphans
 	docker system prune -f
 
-# 构建和测试
+# 构建和测试 (使用统一的build.sh)
 .PHONY: build
-build: ## 构建Docker镜像
-	@echo "$(BLUE)构建Docker镜像...$(NC)"
-	docker-compose build postgres
+build: ## 构建Docker镜像 (优化版本)
+	@echo "$(BLUE)构建Docker镜像 (优化版本)...$(NC)"
+	./build.sh build optimized latest auto
+
+.PHONY: build-standard
+build-standard: ## 构建标准版本
+	@echo "$(BLUE)构建Docker镜像 (标准版本)...$(NC)"
+	./build.sh build standard latest auto
+
+.PHONY: build-china
+build-china: ## 使用国内镜像源构建
+	@echo "$(BLUE)使用国内镜像源构建...$(NC)"
+	./build.sh build optimized latest china
+
+.PHONY: build-international
+build-international: ## 使用国际镜像源构建
+	@echo "$(BLUE)使用国际镜像源构建...$(NC)"
+	./build.sh build optimized latest international
 
 .PHONY: test
-test: ## 运行本地测试
-	@echo "$(BLUE)运行本地测试...$(NC)"
-	./build-helper.sh test-local
+test: ## 运行完整测试
+	@echo "$(BLUE)运行完整测试...$(NC)"
+	./build.sh test full
 
 .PHONY: test-quick
 test-quick: ## 运行快速测试
 	@echo "$(BLUE)运行快速测试...$(NC)"
-	./build-helper.sh test-local quick
+	./build.sh test quick
+
+.PHONY: test-build
+test-build: ## 运行构建测试
+	@echo "$(BLUE)运行构建测试...$(NC)"
+	./test-build.sh
+
+.PHONY: benchmark
+benchmark: ## 运行性能基准测试
+	@echo "$(BLUE)运行性能基准测试...$(NC)"
+	./build.sh benchmark 3
 
 # 数据库管理
 .PHONY: db-connect
@@ -176,11 +201,20 @@ shell: ## 进入PostgreSQL容器shell
 psql: ## 连接到psql (别名)
 psql: db-connect
 
-# CI/CD
+# CI/CD (使用统一构建系统)
 .PHONY: ci-build
 ci-build: ## CI环境构建
-	./build-helper.sh trigger $(POSTGRES_VERSION)
+	@echo "$(BLUE)CI环境构建...$(NC)"
+	./build.sh build optimized latest international
 
 .PHONY: ci-test
 ci-test: ## CI环境测试
-	./build-helper.sh test-commit "CI构建测试 [build] [pg$(POSTGRES_VERSION)]"
+	@echo "$(BLUE)CI环境测试...$(NC)"
+	./build.sh test quick
+
+.PHONY: clean-build
+clean-build: ## 清理构建缓存并重新构建
+	@echo "$(BLUE)清理构建缓存...$(NC)"
+	./build.sh clean
+	@echo "$(BLUE)重新构建...$(NC)"
+	./build.sh build optimized latest auto

@@ -30,7 +30,7 @@ CREATE EXTENSION IF NOT EXISTS intarray;  -- 整数数组操作
 -- PostgresML - 数据库内机器学习
 -- 注意：这需要专门的安装包，通常通过deb包安装
 \echo 'Note: pgml requires special installation via deb packages'
-\echo 'Install command: apt-get install postgresql-15-pgml'
+\echo 'Install command: apt-get install postgresql-16-pgml'
 
 -- 向量相似度计算
 CREATE EXTENSION IF NOT EXISTS pg_trgm;  -- 三元组相似度

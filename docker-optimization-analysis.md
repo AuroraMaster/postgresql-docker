@@ -22,8 +22,8 @@ RUN apt-get update && apt-get install -y \
 ```dockerfile
 # 问题：40+个PostgreSQL扩展一次性安装
 RUN apt-get update && apt-get install -y \
-    postgresql-15-postgis-3 \
-    postgresql-15-postgis-3-scripts \
+    postgresql-16-postgis-3 \
+    postgresql-16-postgis-3-scripts \
     # ... 40多个包
 ```
 **影响**：单次安装失败导致整个层重建，网络下载约200-500MB
