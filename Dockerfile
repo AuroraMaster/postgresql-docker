@@ -17,7 +17,6 @@ LABEL stage="base"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV POSTGRES_DB=postgres
 ENV POSTGRES_USER=postgres
-ENV POSTGRES_PASSWORD=postgres
 
 # 构建参数：网络环境配置
 ARG NETWORK_ENVIRONMENT=auto
@@ -61,11 +60,20 @@ FROM base AS builder
 LABEL stage="builder"
 
 # 添加所有扩展源（一次性完成，减少层数）
-RUN wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - && \
-    echo "deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
-    echo "deb https://packagecloud.io/timescale/timescaledb/debian/ $(lsb_release -c -s) main" > /etc/apt/sources.list.d/timescaledb.list && \
-    wget --quiet -O - https://packagecloud.io/timescale/timescaledb/gpgkey | apt-key add - && \
-    curl https://install.citusdata.com/community/deb.sh | bash
+RUN echo "🔑 Adding extension repositories..." && \
+    # 添加PostgreSQL官方源
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
+    echo "✅ PostgreSQL repository added" && \
+    \
+    # 尝试添加TimescaleDB源（容错处理）
+    (curl -fsSL https://packagecloud.io/timescale/timescaledb/gpgkey | gpg --dearmor -o /usr/share/keyrings/timescaledb-keyring.gpg && \
+     echo "deb [signed-by=/usr/share/keyrings/timescaledb-keyring.gpg] https://packagecloud.io/timescale/timescaledb/debian/ $(lsb_release -c -s) main" > /etc/apt/sources.list.d/timescaledb.list && \
+     echo "✅ TimescaleDB repository added") || echo "⚠️  TimescaleDB repository failed, will use PostgreSQL packages only" && \
+    \
+    # 尝试添加Citus源（容错处理）
+    (curl -fsSL https://install.citusdata.com/community/deb.sh | bash && \
+     echo "✅ Citus repository added") || echo "⚠️  Citus repository failed, will use PostgreSQL packages only"
 
 # 第二层：编译工具和开发依赖 (变动频率低)
 RUN apt-get clean && \
@@ -217,7 +225,6 @@ LABEL stage="final"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV POSTGRES_DB=postgres
 ENV POSTGRES_USER=postgres
-ENV POSTGRES_PASSWORD=postgres
 
 # 智能镜像源配置（最终阶段）
 ARG NETWORK_ENVIRONMENT=auto
