@@ -40,17 +40,18 @@ RUN echo "🌐 Configuring package sources for network environment: $NETWORK_ENV
         echo "deb http://mirrors.tuna.tsinghua.edu.cn/debian-security bullseye-security main contrib non-free" >> /etc/apt/sources.list; \
     fi
 
-# 第一层：系统基础包 (变动频率极低，强缓存)
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
-    apt-get update && apt-get install -y \
-    wget \
-    curl \
-    gnupg2 \
-    lsb-release \
-    ca-certificates \
-    software-properties-common \
-    && rm -rf /var/lib/apt/lists/*
+# 第一层：系统基础包 (增强网络容错性)
+RUN apt-get clean && \
+    apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends --fix-broken \
+        wget \
+        curl \
+        gnupg2 \
+        lsb-release \
+        ca-certificates \
+        software-properties-common \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ================================================================
 # 阶段2: 扩展源和编译环境
@@ -67,32 +68,32 @@ RUN wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-k
     curl https://install.citusdata.com/community/deb.sh | bash
 
 # 第二层：编译工具和开发依赖 (变动频率低)
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
-    apt-get update && apt-get install -y \
-    build-essential \
-    git \
-    cmake \
-    pkg-config \
-    postgresql-server-dev-16 \
-    libssl-dev \
-    libxml2-dev \
-    libxslt1-dev \
-    libgdal-dev \
-    libproj-dev \
-    libgeos-dev \
-    libjson-c-dev \
-    libprotobuf-c-dev \
-    protobuf-c-compiler \
-    python3-dev \
-    python3-pip \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get clean && \
+    apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+        cmake \
+        pkg-config \
+        postgresql-server-dev-16 \
+        libssl-dev \
+        libxml2-dev \
+        libxslt1-dev \
+        libgdal-dev \
+        libproj-dev \
+        libgeos-dev \
+        libjson-c-dev \
+        libprotobuf-c-dev \
+        protobuf-c-compiler \
+        python3-dev \
+        python3-pip \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# 第三层：Python科学计算包 (提前安装，提高缓存命中率)
-RUN --mount=type=cache,target=/root/.cache/pip \
-    if [ "$NETWORK_ENVIRONMENT" = "international" ] || [ "$PIP_INDEX_URL" = "https://pypi.org/simple" ]; then \
+# 第三层：Python科学计算包 (增强网络容错)
+RUN if [ "$NETWORK_ENVIRONMENT" = "international" ] || [ "$PIP_INDEX_URL" = "https://pypi.org/simple" ]; then \
         echo "🌐 Using international PyPI" && \
-        pip3 install \
+        pip3 install --no-cache-dir --retries 3 --timeout 30 \
             numpy==1.24.3 \
             pandas==2.0.3 \
             scikit-learn==1.3.0 \
@@ -102,7 +103,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
             psycopg2-binary==2.9.7; \
     else \
         echo "🇨🇳 Using Tsinghua PyPI mirror" && \
-        pip3 install -i https://pypi.tuna.tsinghua.edu.cn/simple \
+        pip3 install --no-cache-dir --retries 3 --timeout 30 \
+            -i https://pypi.tuna.tsinghua.edu.cn/simple \
             numpy==1.24.3 \
             pandas==2.0.3 \
             scikit-learn==1.3.0 \
@@ -112,107 +114,91 @@ RUN --mount=type=cache,target=/root/.cache/pip \
             psycopg2-binary==2.9.7; \
     fi
 
-# 第四层：PostgreSQL核心扩展 (按重要性分组安装)
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
-    apt-get update && apt-get install -y \
-    # 核心扩展组
-    postgresql-contrib-16 \
-    postgresql-16-postgis-3 \
-    postgresql-16-postgis-3-scripts \
-    postgresql-16-pgrouting \
-    # 时序和分布式
-    timescaledb-2-postgresql-16 \
-    postgresql-16-citus-12.1 \
-    # 搜索和分析
-    postgresql-16-pgvector \
-    postgresql-16-rum \
-    && rm -rf /var/lib/apt/lists/*
+# 第四层：PostgreSQL核心扩展 (增强容错性)
+RUN apt-get clean && \
+    apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends \
+        postgresql-contrib-16 \
+        postgresql-16-postgis-3 \
+        postgresql-16-postgis-3-scripts \
+        postgresql-16-pgrouting \
+        timescaledb-2-postgresql-16 \
+        postgresql-16-citus-12.1 \
+        postgresql-16-pgvector \
+        postgresql-16-rum \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# 第五层：专业扩展 (按使用频率分组)
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
-    apt-get update && apt-get install -y \
-    # 机器学习和分析
-    postgresql-16-age \
-    postgresql-16-hypopg \
-    postgresql-16-hll \
-    postgresql-16-similarity \
-    # 管理和优化
-    postgresql-16-cron \
-    postgresql-16-partman \
-    postgresql-16-repack \
-    # JSON和数据类型
-    postgresql-16-jsquery \
-    postgresql-16-periods \
-    postgresql-16-numeral \
-    postgresql-16-ip4r \
-    postgresql-16-prefix \
-    postgresql-16-semver \
-    postgresql-16-tdigest \
-    && rm -rf /var/lib/apt/lists/*
+# 第五层：专业扩展 (增强容错性)
+RUN apt-get clean && \
+    apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends \
+        postgresql-16-age \
+        postgresql-16-hypopg \
+        postgresql-16-hll \
+        postgresql-16-similarity \
+        postgresql-16-cron \
+        postgresql-16-partman \
+        postgresql-16-repack \
+        postgresql-16-jsquery \
+        postgresql-16-periods \
+        postgresql-16-numeral \
+        postgresql-16-ip4r \
+        postgresql-16-prefix \
+        postgresql-16-semver \
+        postgresql-16-tdigest \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# 第六层：GIS和连接扩展
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
-    apt-get update && apt-get install -y \
-    # GIS扩展
-    postgresql-16-pointcloud \
-    postgresql-16-ogr-fdw \
-    postgresql-16-q3c \
-    # 连接和复制
-    postgresql-16-mysql-fdw \
-    postgresql-16-auto-failover \
-    postgresql-16-bgw-replstatus \
-    postgresql-16-londiste-sql \
-    # 编程语言
-    postgresql-16-plr \
-    # 调试和管理工具
-    postgresql-16-dirtyread \
-    postgresql-16-extra-window-functions \
-    postgresql-16-first-last-agg \
-    postgresql-16-icu-ext \
-    postgresql-16-omnidb \
-    postgresql-16-decoderbufs \
-    postgresql-16-asn1oid \
-    postgresql-16-debversion \
-    && rm -rf /var/lib/apt/lists/*
+# 第六层：GIS和连接扩展 (增强容错性)
+RUN apt-get clean && \
+    apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends \
+        postgresql-16-pointcloud \
+        postgresql-16-ogr-fdw \
+        postgresql-16-q3c \
+        postgresql-16-mysql-fdw \
+        postgresql-16-auto-failover \
+        postgresql-16-bgw-replstatus \
+        postgresql-16-londiste-sql \
+        postgresql-16-plr \
+        postgresql-16-dirtyread \
+        postgresql-16-extra-window-functions \
+        postgresql-16-first-last-agg \
+        postgresql-16-icu-ext \
+        postgresql-16-omnidb \
+        postgresql-16-decoderbufs \
+        postgresql-16-asn1oid \
+        postgresql-16-debversion \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ================================================================
 # 阶段3: 自定义扩展编译 (使用缓存挂载优化)
 # ================================================================
 
-# 编译pgjwt (使用缓存挂载避免重复下载)
+# 编译pgjwt (JWT处理扩展)
 RUN if [ "$SKIP_GIT_EXTENSIONS" != "true" ]; then \
         echo "🔧 Building pgjwt extension..." && \
         cd /tmp && \
-        if [ ! -d "git-cache/pgjwt" ]; then \
-            mkdir -p git-cache && \
-            git clone https://github.com/michelp/pgjwt.git git-cache/pgjwt; \
-        fi && \
-        cp -r git-cache/pgjwt pgjwt-build && \
-        cd pgjwt-build && \
-        git pull origin master && \
+        git clone --depth=1 https://github.com/michelp/pgjwt.git pgjwt && \
+        cd pgjwt && \
         make install && \
-        cd / && rm -rf /tmp/pgjwt-build; \
+        cd / && rm -rf /tmp/pgjwt && \
+        echo "✅ pgjwt installed successfully"; \
     else \
         echo "⏭️ Skipping pgjwt extension (SKIP_GIT_EXTENSIONS=true)"; \
     fi
 
-# 编译pg_stat_monitor (使用缓存挂载)
+# 编译pg_stat_monitor (性能监控扩展)
 RUN if [ "$SKIP_GIT_EXTENSIONS" != "true" ]; then \
         echo "🔧 Building pg_stat_monitor extension..." && \
         cd /tmp && \
-        if [ ! -d "git-cache/pg_stat_monitor" ]; then \
-            mkdir -p git-cache && \
-            git clone https://github.com/percona/pg_stat_monitor.git git-cache/pg_stat_monitor; \
-        fi && \
-        cp -r git-cache/pg_stat_monitor pg_stat_monitor-build && \
-        cd pg_stat_monitor-build && \
-        git pull origin main && \
-        make USE_PGXS=1 && \
+        git clone --depth=1 https://github.com/percona/pg_stat_monitor.git pg_stat_monitor && \
+        cd pg_stat_monitor && \
         make USE_PGXS=1 install && \
-        cd / && rm -rf /tmp/pg_stat_monitor-build; \
+        cd / && rm -rf /tmp/pg_stat_monitor && \
+        echo "✅ pg_stat_monitor installed successfully"; \
     else \
         echo "⏭️ Skipping pg_stat_monitor extension (SKIP_GIT_EXTENSIONS=true)"; \
     fi
@@ -269,18 +255,20 @@ COPY --from=builder /usr/share/postgresql/ /usr/share/postgresql/
 COPY --from=builder /usr/local/lib/python3.9/ /usr/local/lib/python3.9/
 COPY --from=builder /usr/local/bin/ /usr/local/bin/
 
-# 只安装运行时必需的包 (大幅减少最终镜像大小)
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
-    apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    libgdal28 \
-    libproj19 \
-    libgeos-3.9.0 \
-    libjson-c5 \
-    libprotobuf-c1 \
-    && rm -rf /var/lib/apt/lists/*
+# 运行时依赖 (精简安装)
+RUN apt-get clean && \
+    apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        wget \
+        gosu \
+        locales \
+        tzdata \
+        python3 \
+        python3-pip \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # PostgreSQL配置优化 (合并为单个RUN减少层数)
 RUN echo "shared_preload_libraries = 'timescaledb,citus,pg_cron,pg_stat_statements,pg_stat_monitor'" >> /usr/share/postgresql/postgresql.conf.sample && \
